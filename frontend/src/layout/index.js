@@ -24,7 +24,7 @@ import UserModal from "../components/UserModal";
 import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
 import { i18n } from "../translate/i18n";
-import { useThemeContext } from "../context/DarkMode";
+import { useDarkMode as useThemeContext } from "../context/DarkMode";
 
 const drawerWidth = 240;
 

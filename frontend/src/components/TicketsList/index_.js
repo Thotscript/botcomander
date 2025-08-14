@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useReducer, useContext } from "react";
-import openSocket from "socket.io-client";
+import openSocket from "../../services/socket-io";
 
 import { makeStyles } from "@material-ui/core/styles";
 import List from "@material-ui/core/List";
@@ -10,7 +10,6 @@ import TicketsListSkeleton from "../TicketsListSkeleton";
 
 import useTickets from "../../hooks/useTickets";
 import { i18n } from "../../translate/i18n";
-import { ListSubheader } from "@material-ui/core";
 import { AuthContext } from "../../context/Auth/AuthContext";
 
 const useStyles = makeStyles(theme => ({
@@ -153,42 +152,39 @@ const reducer = (state, action) => {
 	}
 };
 
-const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) => {
+	const TicketsList = (props) => {
+		const { status, searchParam, showAll, selectedQueueIds, updateCount, style } =
+			props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
 	const [ticketsList, dispatch] = useReducer(reducer, []);
 	const { user } = useContext(AuthContext);
-	const { profile, queues } = user;
 
 	useEffect(() => {
 		dispatch({ type: "RESET" });
 		setPageNumber(1);
-	}, [status, searchParam, dispatch, showAll, tags, selectedQueueIds]);
+	}, [status, searchParam, dispatch, showAll, selectedQueueIds]);
 
 	const { tickets, hasMore, loading } = useTickets({
 		pageNumber,
 		searchParam,
-		tags: JSON.stringify(tags),
 		status,
 		showAll,
 		queueIds: JSON.stringify(selectedQueueIds),
 	});
 
 	useEffect(() => {
-		const queueIds = queues.map((q) => q.id);
-		const filteredTickets = tickets.filter((t) => queueIds.indexOf(t.queueId) > -1);
-
-		if (profile === "user") {
-			dispatch({ type: "LOAD_TICKETS", payload: filteredTickets });
-		} else {
-			dispatch({ type: "LOAD_TICKETS", payload: tickets });
-		}
-	}, [tickets, status, searchParam, queues, profile]);
+		if (!status && !searchParam) return;
+		dispatch({
+			type: "LOAD_TICKETS",
+			payload: tickets,
+		});
+	}, [tickets]);
 
 	useEffect(() => {
-		const socket = openSocket(process.env.REACT_APP_BACKEND_URL);
+		const socket = openSocket();
 
-		const shouldUpdateTicket = ticket =>
+		const shouldUpdateTicket = ticket => !searchParam &&
 			(!ticket.userId || ticket.userId === user?.id || showAll) &&
 			(!ticket.queueId || selectedQueueIds.indexOf(ticket.queueId) > -1);
 
@@ -228,11 +224,6 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 		});
 
 		socket.on("appMessage", data => {
-			const queueIds = queues.map((q) => q.id);
-			if (profile === 'user' && (queueIds.indexOf(data.ticket.queue?.id) === -1 || data.ticket.queue === null)) {
-				return;
-			}
-
 			if (data.action === "create" && shouldUpdateTicket(data.ticket)) {
 				dispatch({
 					type: "UPDATE_TICKET_UNREAD_MESSAGES",
@@ -253,7 +244,14 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 		return () => {
 			socket.disconnect();
 		};
-	}, [status, showAll, user, selectedQueueIds, profile, queues]);
+	}, [status, searchParam, showAll, user, selectedQueueIds]);
+
+	useEffect(() => {
+    if (typeof updateCount === "function") {
+      updateCount(ticketsList.length);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticketsList]);
 
 	const loadMore = () => {
 		setPageNumber(prevState => prevState + 1);
@@ -265,12 +263,13 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 		const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
 
 		if (scrollHeight - (scrollTop + 100) < clientHeight) {
+			e.currentTarget.scrollTop = scrollTop - 100;
 			loadMore();
 		}
 	};
 
 	return (
-		<div className={classes.ticketsListWrapper}>
+    <Paper className={classes.ticketsListWrapper} style={style}>
 			<Paper
 				square
 				name="closed"
@@ -279,26 +278,6 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 				onScroll={handleScroll}
 			>
 				<List style={{ paddingTop: 0 }}>
-					{status === "open" && (
-						<ListSubheader className={classes.ticketsListHeader}>
-							<div>
-								{i18n.t("ticketsList.assignedHeader")}
-								<span className={classes.ticketsCount}>
-									{ticketsList.length}
-								</span>
-							</div>
-						</ListSubheader>
-					)}
-					{status === "pending" && (
-						<ListSubheader className={classes.ticketsListHeader}>
-							<div>
-								{i18n.t("ticketsList.pendingHeader")}
-								<span className={classes.ticketsCount}>
-									{ticketsList.length}
-								</span>
-							</div>
-						</ListSubheader>
-					)}
 					{ticketsList.length === 0 && !loading ? (
 						<div className={classes.noTicketsDiv}>
 							<span className={classes.noTicketsTitle}>
@@ -318,7 +297,7 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 					{loading && <TicketsListSkeleton />}
 				</List>
 			</Paper>
-		</div>
+    </Paper>
 	);
 };
 

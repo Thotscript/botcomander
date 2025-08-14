@@ -15,6 +15,9 @@ import PeopleAltOutlinedIcon from "@material-ui/icons/PeopleAltOutlined";
 import ContactPhoneOutlinedIcon from "@material-ui/icons/ContactPhoneOutlined";
 import AccountTreeOutlinedIcon from "@material-ui/icons/AccountTreeOutlined";
 import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
+import CodeRoundedIcon from "@material-ui/icons/CodeRounded";
+import EventIcon from '@material-ui/icons/Event';
+import LocalOfferIcon from '@material-ui/icons/LocalOffer';
 
 import { i18n } from "../translate/i18n";
 import { WhatsAppsContext } from "../context/WhatsApp/WhatsAppsContext";
@@ -102,6 +105,16 @@ const MainListItems = (props) => {
         primary={i18n.t("mainDrawer.listItems.quickAnswers")}
         icon={<QuestionAnswerOutlinedIcon />}
       />
+      <ListItemLink
+        to="/schedules"
+        primary={i18n.t("mainDrawer.listItems.schedules")}
+        icon={<EventIcon />}
+      />
+      <ListItemLink
+        to="/tags"
+        primary={i18n.t("mainDrawer.listItems.tags")}
+        icon={<LocalOfferIcon />}
+      />
       <Can
         role={user.profile}
         perform="drawer-admin-items:view"
@@ -111,6 +124,11 @@ const MainListItems = (props) => {
             <ListSubheader inset>
               {i18n.t("mainDrawer.listItems.administration")}
             </ListSubheader>
+            <ListItemLink
+              to="/messages-api"
+              primary={i18n.t("mainDrawer.listItems.messagesAPI")}
+              icon={<CodeRoundedIcon />}
+            />
             <ListItemLink
               to="/users"
               primary={i18n.t("mainDrawer.listItems.users")}
