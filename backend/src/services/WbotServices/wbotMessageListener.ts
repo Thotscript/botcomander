@@ -32,6 +32,91 @@ interface Session extends Client {
 
 const writeFileAsync = promisify(writeFile);
 
+// Função para emitir eventos de socket para todas as salas necessárias
+const emitSocketEvent = async (ticket: Ticket): Promise<Ticket | null> => {
+  const io = getIO();
+  
+  console.log("📤 INICIANDO EMISSÃO DE EVENTO");
+  console.log("Ticket ID:", ticket.id);
+  console.log("Ticket Status:", ticket.status);
+  
+  // Busca o ticket completo com todas as associações
+  const ticketWithIncludes = await Ticket.findByPk(ticket.id, {
+    include: [
+      "contact",
+      "queue",
+      "user",
+      "whatsapp"
+    ]
+  });
+
+  if (!ticketWithIncludes) {
+    console.log("❌ Ticket não encontrado no banco!");
+    return null;
+  }
+
+  console.log("✅ Ticket encontrado:", {
+    id: ticketWithIncludes.id,
+    status: ticketWithIncludes.status,
+    contactName: ticketWithIncludes.contact?.name
+  });
+
+  // Listar todas as salas e clientes conectados
+  const rooms = io.sockets.adapter.rooms;
+  console.log("🏠 Salas disponíveis:");
+  rooms.forEach((value, key) => {
+    console.log(`  - ${key}: ${value.size} clientes`);
+  });
+
+  // Emite para a sala do status do ticket (pending, open, etc.)
+  if (ticketWithIncludes.status) {
+    console.log(`📨 EMITINDO para sala '${ticketWithIncludes.status}'`);
+    
+    io.to(ticketWithIncludes.status).emit("ticket", {
+      action: "update",
+      ticket: ticketWithIncludes
+    });
+    
+    // IMPORTANTE: Emite também appMessage para garantir
+    console.log(`📨 EMITINDO appMessage para sala '${ticketWithIncludes.status}'`);
+    io.to(ticketWithIncludes.status).emit("appMessage", {
+      action: "create",
+      ticket: ticketWithIncludes
+    });
+  }
+
+  // Emite para a sala de notificação
+  console.log("📨 EMITINDO para sala 'notification'");
+  io.to("notification").emit("ticket", {
+    action: "update",
+    ticket: ticketWithIncludes
+  });
+  
+  io.to("notification").emit("appMessage", {
+    action: "create",
+    ticket: ticketWithIncludes
+  });
+
+  // Emite para a sala específica do ticket
+  console.log(`📨 EMITINDO para sala do ticket '${ticket.id}'`);
+  io.to(ticket.id.toString()).emit("ticket", {
+    action: "update",
+    ticket: ticketWithIncludes
+  });
+
+  // Emite broadcast para TODOS (teste)
+  console.log("📨 EMITINDO broadcast para TODOS");
+  io.emit("ticket", {
+    action: "update",
+    ticket: ticketWithIncludes
+  });
+
+  console.log("✅ EVENTOS EMITIDOS COM SUCESSO!");
+  console.log("=================================");
+
+  return ticketWithIncludes;
+};
+
 const verifyContact = async (msgContact: WbotContact): Promise<Contact> => {
   const profilePicUrl = await msgContact.getProfilePicUrl();
 
@@ -63,7 +148,6 @@ const verifyQuotedMessage = async (
   return quotedMsg;
 };
 
-
 // generate random id string for file names, function got from: https://stackoverflow.com/a/1349426/1851801
 function makeRandomId(length: number) {
     let result = '';
@@ -82,6 +166,7 @@ const verifyMediaMessage = async (
   ticket: Ticket,
   contact: Contact
 ): Promise<Message> => {
+  console.log("📷 Processando mensagem com mídia");
   const quotedMsg = await verifyQuotedMessage(msg);
 
   const media = await msg.downloadMedia();
@@ -125,6 +210,31 @@ const verifyMediaMessage = async (
   await ticket.update({ lastMessage: msg.body || media.filename });
   const newMessage = await CreateMessageService({ messageData });
 
+  // Emitir evento após criar a mensagem
+  if (!msg.fromMe) {
+    console.log("📤 Emitindo evento de mídia (não é de mim)");
+    const ticketUpdated = await emitSocketEvent(ticket);
+    
+    if (ticketUpdated) {
+      // Emite também o evento appMessage para o NotificationsPopOver
+      const io = getIO();
+      io.to("notification").emit("appMessage", {
+        action: "create",
+        message: newMessage,
+        ticket: ticketUpdated,
+        contact
+      });
+
+      // Emite para a sala do status
+      io.to(ticket.status).emit("appMessage", {
+        action: "create",
+        message: newMessage,
+        ticket: ticketUpdated,
+        contact
+      });
+    }
+  }
+
   return newMessage;
 };
 
@@ -133,6 +243,7 @@ const verifyMessage = async (
   ticket: Ticket,
   contact: Contact
 ) => {
+  console.log("💬 Processando mensagem de texto");
 
   if (msg.type === 'location')
     msg = prepareLocation(msg);
@@ -153,7 +264,34 @@ const verifyMessage = async (
   // @ts-ignore
   await ticket.update({ lastMessage: msg.type === "location" ? msg.location.description ? "Localization - " + msg.location.description.split('\\n')[0] : "Localization" : msg.body });
 
-  await CreateMessageService({ messageData });
+  const newMessage = await CreateMessageService({ messageData });
+
+  // Emitir evento após criar a mensagem
+  if (!msg.fromMe) {
+    console.log("📤 Emitindo evento de texto (não é de mim)");
+    const ticketUpdated = await emitSocketEvent(ticket);
+    
+    if (ticketUpdated) {
+      // Emite também o evento appMessage para o NotificationsPopOver
+      const io = getIO();
+      io.to("notification").emit("appMessage", {
+        action: "create",
+        message: newMessage,
+        ticket: ticketUpdated,
+        contact
+      });
+
+      // Emite para a sala do status
+      io.to(ticket.status).emit("appMessage", {
+        action: "create",
+        message: newMessage,
+        ticket: ticketUpdated,
+        contact
+      });
+    }
+  } else {
+    console.log("⏭️ Mensagem é minha, não emitindo eventos");
+  }
 };
 
 const prepareLocation = (msg: WbotMessage): WbotMessage => {
@@ -252,6 +390,14 @@ const handleMessage = async (
   }
 
   try {
+    console.log("=================================");
+    console.log("📱 Nova mensagem WhatsApp recebida!");
+    console.log("Tipo:", msg.type);
+    console.log("De mim?", msg.fromMe);
+    console.log("Tem mídia?", msg.hasMedia);
+    console.log("Body:", msg.body?.substring(0, 50));
+    console.log("=================================");
+
     let msgContact: WbotContact;
     let groupContact: Contact | undefined;
 
@@ -290,6 +436,7 @@ const handleMessage = async (
     const unreadMessages = msg.fromMe ? 0 : chat.unreadCount;
 
     const contact = await verifyContact(msgContact);
+    console.log("👤 Contato:", contact.name, contact.number);
 
     if (
       unreadMessages === 0 &&
@@ -304,6 +451,18 @@ const handleMessage = async (
       unreadMessages,
       groupContact
     );
+    
+    console.log("🎫 Ticket:", {
+      id: ticket.id,
+      status: ticket.status,
+      userId: ticket.userId
+    });
+
+    // Emitir evento quando um novo ticket é criado ou atualizado
+    if (!msg.fromMe && ticket.status === "pending") {
+      console.log("📤 Ticket pendente, emitindo evento inicial");
+      await emitSocketEvent(ticket);
+    }
 
     if (msg.hasMedia) {
       await verifyMediaMessage(msg, ticket, contact);
@@ -412,6 +571,7 @@ const handleMessage = async (
   } catch (err) {
     Sentry.captureException(err);
     logger.error(`Error handling whatsapp message: Err: ${err}`);
+    console.error("❌ ERRO AO PROCESSAR MENSAGEM:", err);
   }
 };
 

@@ -1,14 +1,16 @@
-import openSocket from "socket.io-client";
-import { getBackendUrl } from "../config";
+// Este arquivo deve estar em frontend/src/services/socket-io.js
 
-function connectToSocket() {
-    const token = localStorage.getItem("token");
-    return openSocket(getBackendUrl(), {
-      transports: ["websocket", "polling", "flashsocket"],
-      query: {
-        token: JSON.parse(token),
-      },
-    });
+import openSocket from "socket.io-client";
+
+function connectSocket() {
+  const token = localStorage.getItem("token");
+  
+  return openSocket(process.env.REACT_APP_BACKEND_URL, {
+    transports: ["websocket", "polling"],
+    query: {
+      token: token
+    }
+  });
 }
 
-export default connectToSocket;
+export default connectSocket;

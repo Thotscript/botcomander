@@ -186,7 +186,22 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 	}, [tickets, status, searchParam, queues, profile]);
 
 	useEffect(() => {
-		const socket = openSocket(process.env.REACT_APP_BACKEND_URL);
+		console.log("🔌 Iniciando conexão socket para status:", status);
+		
+		// Pega o token do localStorage
+		const token = localStorage.getItem("token");
+		
+		const socket = openSocket(process.env.REACT_APP_BACKEND_URL, {
+			transports: ["websocket", "polling"],
+			query: {
+				token: token
+			}
+		});
+		
+		// Debug: verificar todos os eventos recebidos
+		socket.onAny((eventName, ...args) => {
+			console.log("📨 Evento recebido:", eventName, args);
+		});
 
 		const shouldUpdateTicket = ticket =>
 			(!ticket.userId || ticket.userId === user?.id || showAll) &&
@@ -196,6 +211,9 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 			ticket.queueId && selectedQueueIds.indexOf(ticket.queueId) === -1;
 
 		socket.on("connect", () => {
+			console.log("✅ Socket conectado! Status atual:", status);
+			console.log("📢 Entrando na sala:", status || "notification");
+			
 			if (status) {
 				socket.emit("joinTickets", status);
 			} else {
@@ -203,7 +221,19 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 			}
 		});
 
+		socket.on("connect_error", (error) => {
+			console.error("❌ Erro de conexão:", error.message);
+		});
+
+		socket.on("disconnect", (reason) => {
+			console.log("🔌 Socket desconectado. Razão:", reason);
+		});
+
 		socket.on("ticket", data => {
+			console.log("🎫 Evento TICKET recebido:", data);
+			console.log("Status do ticket:", data.ticket?.status);
+			console.log("Status da lista:", status);
+
 			if (data.action === "updateUnread") {
 				dispatch({
 					type: "RESET_UNREAD",
@@ -211,15 +241,24 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 				});
 			}
 
-			if (data.action === "update" && shouldUpdateTicket(data.ticket)) {
-				dispatch({
-					type: "UPDATE_TICKET",
-					payload: data.ticket,
-				});
-			}
-
-			if (data.action === "update" && notBelongsToUserQueues(data.ticket)) {
-				dispatch({ type: "DELETE_TICKET", payload: data.ticket.id });
+			if (data.action === "update") {
+				// Se o ticket pertence ao status atual e deve ser atualizado
+				if (data.ticket && data.ticket.status === status && shouldUpdateTicket(data.ticket)) {
+					console.log("✅ Atualizando ticket na lista atual:", data.ticket);
+					dispatch({
+						type: "UPDATE_TICKET",
+						payload: data.ticket,
+					});
+				}
+				// Se o ticket mudou de status (saiu do status atual)
+				else if (data.ticket && data.ticket.status !== status) {
+					console.log("🗑️ Removendo ticket da lista atual:", data.ticket.id);
+					dispatch({ type: "DELETE_TICKET", payload: data.ticket.id });
+				}
+				// Se o ticket não pertence mais às filas do usuário
+				else if (data.ticket && notBelongsToUserQueues(data.ticket)) {
+					dispatch({ type: "DELETE_TICKET", payload: data.ticket.id });
+				}
 			}
 
 			if (data.action === "delete") {
@@ -228,16 +267,31 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 		});
 
 		socket.on("appMessage", data => {
+			console.log("💬 Evento APPMESSAGE recebido:", data);
+			console.log("Status do ticket:", data.ticket?.status);
+			console.log("Status da lista:", status);
+			
 			const queueIds = queues.map((q) => q.id);
-			if (profile === 'user' && (queueIds.indexOf(data.ticket.queue?.id) === -1 || data.ticket.queue === null)) {
-				return;
+			
+			// Verifica se é usuário e se tem permissão para ver o ticket
+			if (profile === 'user' && data.ticket) {
+				const ticketQueueId = data.ticket?.queue?.id || data.ticket?.queueId;
+				if (ticketQueueId && queueIds.indexOf(ticketQueueId) === -1) {
+					console.log("❌ Usuário sem permissão para esta fila");
+					return;
+				}
 			}
 
-			if (data.action === "create" && shouldUpdateTicket(data.ticket)) {
-				dispatch({
-					type: "UPDATE_TICKET_UNREAD_MESSAGES",
-					payload: data.ticket,
-				});
+			// Para tickets pendentes, sempre adiciona/atualiza quando chega mensagem nova
+			if (data.action === "create" && data.ticket) {
+				// Se o ticket é do status atual
+				if (data.ticket.status === status && shouldUpdateTicket(data.ticket)) {
+					console.log("✅ Atualizando ticket via appMessage:", data.ticket);
+					dispatch({
+						type: "UPDATE_TICKET_UNREAD_MESSAGES",
+						payload: data.ticket,
+					});
+				}
 			}
 		});
 
@@ -251,6 +305,7 @@ const TicketsList = ({ status, searchParam, tags, showAll, selectedQueueIds }) =
 		});
 
 		return () => {
+			console.log("🔌 Desconectando socket");
 			socket.disconnect();
 		};
 	}, [status, showAll, user, selectedQueueIds, profile, queues]);

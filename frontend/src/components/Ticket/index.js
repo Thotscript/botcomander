@@ -99,7 +99,7 @@ const Ticket = () => {
         }
       };
       fetchTicket();
-    }, 500);
+    }, 100);
     return () => clearTimeout(delayDebounceFn);
   }, [ticketId, history]);
 

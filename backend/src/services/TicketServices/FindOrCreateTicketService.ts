@@ -3,6 +3,7 @@ import { Op } from "sequelize";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import ShowTicketService from "./ShowTicketService";
+import { getIO } from "../../libs/socket";
 
 const FindOrCreateTicketService = async (
   contact: Contact,
@@ -20,6 +21,9 @@ const FindOrCreateTicketService = async (
     }
   });
 
+  let isNewTicket = false;
+  let wasReopened = false;
+
   if (ticket) {
     await ticket.update({ unreadMessages });
   }
@@ -34,6 +38,7 @@ const FindOrCreateTicketService = async (
     });
 
     if (ticket) {
+      wasReopened = true;
       await ticket.update({
         status: "pending",
         userId: null,
@@ -55,6 +60,7 @@ const FindOrCreateTicketService = async (
     });
 
     if (ticket) {
+      wasReopened = true;
       await ticket.update({
         status: "pending",
         userId: null,
@@ -64,6 +70,7 @@ const FindOrCreateTicketService = async (
   }
 
   if (!ticket) {
+    isNewTicket = true;
     ticket = await Ticket.create({
       contactId: groupContact ? groupContact.id : contact.id,
       status: "pending",
@@ -74,6 +81,39 @@ const FindOrCreateTicketService = async (
   }
 
   ticket = await ShowTicketService(ticket.id);
+
+  // Emitir evento quando um novo ticket é criado ou reaberto como pending
+  if (isNewTicket || wasReopened || ticket.status === "pending") {
+    const io = getIO();
+    
+    console.log("Emitindo evento para ticket pendente:", ticket.id);
+    
+    // Emite para a sala "pending"
+    io.to("pending").emit("ticket", {
+      action: "update",
+      ticket
+    });
+    
+    // Emite também o evento appMessage para garantir que a lista seja atualizada
+    io.to("pending").emit("appMessage", {
+      action: "create",
+      ticket
+    });
+
+    // Emite para a sala de notificação
+    io.to("notification").emit("ticket", {
+      action: "update",
+      ticket
+    });
+
+    // Se foi reaberto (era closed e voltou para pending), remove da lista closed
+    if (wasReopened) {
+      io.to("closed").emit("ticket", {
+        action: "delete",
+        ticketId: ticket.id
+      });
+    }
+  }
 
   return ticket;
 };
