@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useHistory } from "react-router-dom";
-import openSocket from "../../services/socket-io";
+import openSocket, { reattachAuth } from "../../services/socket-io";
 
 import { toast } from "react-toastify";
 
@@ -18,7 +18,8 @@ const useAuth = () => {
 		config => {
 			const token = localStorage.getItem("token");
 			if (token) {
-				config.headers["Authorization"] = `Bearer ${JSON.parse(token)}`;
+				//config.headers["Authorization"] = `Bearer ${JSON.parse(token)}`;
+				config.headers["Authorization"] = `Bearer ${token}`;
 				setIsAuth(true);
 			}
 			return config;
@@ -39,8 +40,10 @@ const useAuth = () => {
 
 				const { data } = await api.post("/auth/refresh_token");
 				if (data) {
-					localStorage.setItem("token", JSON.stringify(data.token));
+					//localStorage.setItem("token", JSON.stringify(data.token));
+					localStorage.setItem("token", data.token);
 					api.defaults.headers.Authorization = `Bearer ${data.token}`;
+					reattachAuth(data.token); // <- socket passa a usar o token novo
 				}
 				return api(originalRequest);
 			}
@@ -60,6 +63,8 @@ const useAuth = () => {
 				try {
 					const { data } = await api.post("/auth/refresh_token");
 					api.defaults.headers.Authorization = `Bearer ${data.token}`;
+					localStorage.setItem("token", data.token); // garante token novo no storage
+                    reattachAuth(data.token); // reautentica o socket (se já existir)
 					setIsAuth(true);
 					setUser(data.user);
 				} catch (err) {
@@ -70,27 +75,42 @@ const useAuth = () => {
 		})();
 	}, []);
 
+	// useEffect(() => {
+	// 	const socket = openSocket();
+
+	// 	socket.on("user", data => {
+	// 		if (data.action === "update" && data.user.id === user.id) {
+	// 			setUser(data.user);
+	// 		}
+	// 	});
+
+	// 	return () => {
+	// 		socket.disconnect();
+	// 	};
+	// }, [user]);
+
 	useEffect(() => {
+		if (!isAuth) return; // só conecta se estiver autenticado
 		const socket = openSocket();
-
 		socket.on("user", data => {
-			if (data.action === "update" && data.user.id === user.id) {
-				setUser(data.user);
-			}
-		});
+		if (data.action === "update" && data.user?.id === user?.id) {
+			setUser(data.user);
+		}
+	});
 
-		return () => {
-			socket.disconnect();
-		};
-	}, [user]);
+	return () => socket.disconnect();
+	}, [isAuth, user?.id]);
+
 
 	const handleLogin = async userData => {
 		setLoading(true);
 
 		try {
 			const { data } = await api.post("/auth/login", userData);
-			localStorage.setItem("token", JSON.stringify(data.token));
+//			localStorage.setItem("token", JSON.stringify(data.token));
+            localStorage.setItem("token", data.token);
 			api.defaults.headers.Authorization = `Bearer ${data.token}`;
+			reattachAuth(data.token);
 			setUser(data.user);
 			setIsAuth(true);
 			toast.success(i18n.t("auth.toasts.success"));
