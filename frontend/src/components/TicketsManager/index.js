@@ -97,45 +97,65 @@ const CombinedTicketsList = ({ tabOpen, showAll, selectedQueueIds, updateOpenCou
     };
   }, []);
 
-  // Handler para atualizações via socket
+  // Handler para atualizações via socket - CORRIGIDO
   useEffect(() => {
     const shouldUpdateTicket = ticket => {
-      // Verificação mais robusta para incluir tickets aceitos
       const userMatch = !ticket.userId || ticket.userId === user?.id || showAll;
       const queueMatch = !ticket.queueId || selectedQueueIds.length === 0 || selectedQueueIds.indexOf(ticket.queueId) > -1;
       return userMatch && queueMatch;
     };
 
     const offTicket = onTicketUpdate(data => {
-      console.log("Socket update received:", data); // Debug log
+      console.log("CombinedTicketsList - Socket update received:", {
+        action: data.action,
+        ticketId: data.ticket?.id,
+        ticketStatus: data.ticket?.status
+      });
       
       if (data.action === "delete") {
+        console.log("Removendo ticket:", data.ticketId);
         setOpenTickets(prev => prev.filter(t => t.id !== data.ticketId));
         setPendingTickets(prev => prev.filter(t => t.id !== data.ticketId));
         return;
       }
 
-      if (data.action !== "upsert" || !data.ticket) return;
+      // CORREÇÃO: Processar tanto "upsert" quanto "update" e "create"
+      if (data.action !== "upsert" && data.action !== "update" && data.action !== "create") return;
+      
+      if (!data.ticket) {
+        console.warn("Evento sem ticket:", data);
+        return;
+      }
       
       const ticketStatus = normalizeStatus(data.ticket.status);
-      console.log("Normalized status:", ticketStatus, "Original:", data.ticket.status); // Debug log
+      console.log("Status normalizado:", ticketStatus, "Original:", data.ticket.status);
       
       // Sempre remove o ticket das duas listas primeiro
-      setOpenTickets(prev => prev.filter(t => t.id !== data.ticket.id));
-      setPendingTickets(prev => prev.filter(t => t.id !== data.ticket.id));
+      setOpenTickets(prev => {
+        const filtered = prev.filter(t => t.id !== data.ticket.id);
+        console.log(`Open tickets: ${prev.length} -> ${filtered.length}`);
+        return filtered;
+      });
+      setPendingTickets(prev => {
+        const filtered = prev.filter(t => t.id !== data.ticket.id);
+        console.log(`Pending tickets: ${prev.length} -> ${filtered.length}`);
+        return filtered;
+      });
       
       // Só adiciona se o ticket deve aparecer para este usuário
       if (!shouldUpdateTicket(data.ticket)) {
-        console.log("Ticket filtered out by shouldUpdateTicket"); // Debug log
+        console.log("Ticket filtrado por shouldUpdateTicket");
         return;
       }
       
       if (ticketStatus === "open") {
-        console.log("Adding ticket to open list:", data.ticket.id); // Debug log
+        console.log("Adicionando ticket à lista OPEN:", data.ticket.id);
         setOpenTickets(prev => [data.ticket, ...prev]);
       } else if (ticketStatus === "pending") {
-        console.log("Adding ticket to pending list:", data.ticket.id); // Debug log
+        console.log("Adicionando ticket à lista PENDING:", data.ticket.id);
         setPendingTickets(prev => [data.ticket, ...prev]);
+      } else {
+        console.log("Ticket com status ignorado:", ticketStatus);
       }
     });
 
