@@ -80,13 +80,6 @@ module.exports = {
         type: DataTypes.TEXT,
         allowNull: true
       },
-      companyId: {
-        type: DataTypes.INTEGER,
-        references: { model: "Companies", key: "id" },
-        onUpdate: "CASCADE",
-        onDelete: "CASCADE",
-        allowNull: false
-      },
       contactListId: {
         type: DataTypes.INTEGER,
         references: { model: "ContactLists", key: "id" },

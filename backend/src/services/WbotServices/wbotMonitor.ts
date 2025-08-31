@@ -16,15 +16,29 @@ const wbotMonitor = async (
 ): Promise<void> => {
   const io = getIO();
   const sessionName = whatsapp.name;
+  const traceId = `wpp:${whatsapp.id}`;
 
   try {
-    wbot.on("change_state", async newState => {
-      logger.info(`Monitor session: ${sessionName}, ${newState}`);
+    logger.info({ traceId, sessionName }, "wbotMonitor: attach listeners");
+
+    wbot.on("change_state", async (newState: any) => {
+      logger.info({ traceId, sessionName, newState }, "Monitor: change_state");
+
+      // Mapeia estados para algo útil na UI/DB e evita sobrescrever CONNECTED sem necessidade
+      const mapped =
+        newState === "READY" ? "CONNECTED" : String(newState || "").toUpperCase();
+
+      const allowed = new Set(["OPENING", "QRCODE", "AUTHENTICATED", "CONNECTED"]);
+      if (!allowed.has(mapped)) {
+        logger.debug({ traceId, mapped }, "Monitor: state ignored");
+        return;
+      }
+
       try {
-        await whatsapp.update({ status: newState });
+        await whatsapp.update({ status: mapped });
       } catch (err) {
         Sentry.captureException(err);
-        logger.error(err);
+        logger.error({ traceId, err }, "Monitor: change_state update failed");
       }
 
       io.emit("whatsappSession", {
@@ -34,16 +48,17 @@ const wbotMonitor = async (
     });
 
     wbot.on("change_battery", async batteryInfo => {
-      const { battery, plugged } = batteryInfo;
+      const { battery, plugged } = batteryInfo as any;
       logger.info(
-        `Battery session: ${sessionName} ${battery}% - Charging? ${plugged}`
+        { traceId, sessionName, battery, plugged },
+        "Monitor: change_battery"
       );
 
       try {
         await whatsapp.update({ battery, plugged });
       } catch (err) {
         Sentry.captureException(err);
-        logger.error(err);
+        logger.error({ traceId, err }, "Monitor: change_battery update failed");
       }
 
       io.emit("whatsappSession", {
@@ -53,12 +68,12 @@ const wbotMonitor = async (
     });
 
     wbot.on("disconnected", async reason => {
-      logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
+      logger.info({ traceId, sessionName, reason }, "Monitor: disconnected");
       try {
         await whatsapp.update({ status: "OPENING", session: "" });
       } catch (err) {
         Sentry.captureException(err);
-        logger.error(err);
+        logger.error({ traceId, err }, "Monitor: disconnected update failed");
       }
 
       io.emit("whatsappSession", {
@@ -66,11 +81,15 @@ const wbotMonitor = async (
         session: whatsapp
       });
 
-      setTimeout(() => StartWhatsAppSession(whatsapp), 2000);
+      // Tenta reabrir após um pequeno atraso
+      setTimeout(() => {
+        logger.info({ traceId, sessionName }, "Monitor: restarting session");
+        StartWhatsAppSession(whatsapp);
+      }, 2000);
     });
   } catch (err) {
     Sentry.captureException(err);
-    logger.error(err);
+    logger.error({ traceId, err }, "wbotMonitor: outer error");
   }
 };
 

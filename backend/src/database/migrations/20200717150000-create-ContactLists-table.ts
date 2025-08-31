@@ -2,20 +2,16 @@ import { QueryInterface, DataTypes } from "sequelize";
 
 module.exports = {
   up: (queryInterface: QueryInterface) => {
-    return queryInterface.createTable("CampaignSettings", {
+    return queryInterface.createTable("ContactLists", {
       id: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
         allowNull: false
       },
-      key: {
+      name: {
         type: DataTypes.STRING,
         allowNull: false
-      },
-      value: {
-        type: DataTypes.TEXT,
-        allowNull: true
       },
       createdAt: {
         type: DataTypes.DATE,
@@ -29,6 +25,6 @@ module.exports = {
   },
 
   down: (queryInterface: QueryInterface) => {
-    return queryInterface.dropTable("CampaignSettings");
+    return queryInterface.dropTable("ContactLists");
   }
 };

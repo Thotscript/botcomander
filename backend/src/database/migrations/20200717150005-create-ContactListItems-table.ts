@@ -2,20 +2,35 @@ import { QueryInterface, DataTypes } from "sequelize";
 
 module.exports = {
   up: (queryInterface: QueryInterface) => {
-    return queryInterface.createTable("CampaignSettings", {
+    return queryInterface.createTable("ContactListItems", {
       id: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
         allowNull: false
       },
-      key: {
+      name: {
         type: DataTypes.STRING,
         allowNull: false
       },
-      value: {
-        type: DataTypes.TEXT,
+      number: {
+        type: DataTypes.STRING,
+        allowNull: false
+      },
+      email: {
+        type: DataTypes.STRING,
         allowNull: true
+      },
+      contactListId: {
+        type: DataTypes.INTEGER,
+        references: { model: "ContactLists", key: "id" },
+        onUpdate: "CASCADE",
+        onDelete: "CASCADE",
+        allowNull: false
+      },
+      isWhatsappValid: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
       },
       createdAt: {
         type: DataTypes.DATE,
@@ -29,6 +44,6 @@ module.exports = {
   },
 
   down: (queryInterface: QueryInterface) => {
-    return queryInterface.dropTable("CampaignSettings");
+    return queryInterface.dropTable("ContactListItems");
   }
 };
